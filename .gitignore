@@ -1,0 +1,13 @@
+.vs/
+**/bin/
+**/obj/
+TestResults/
+*.user
+*.suo
+*.userosscache
+*.sln.docstates
+.env
+.env.*
+secrets/
+*.tar
+**/appsettings.json
