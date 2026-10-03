@@ -115,6 +115,34 @@ jobs:
       - name: Checkout source code
         uses: actions/checkout@v4
 
+      # ==========================================
+      # CONFIGURE KUBECTL
+      # ==========================================
+      - name: Configure kubectl
+        shell: powershell
+        run: |
+          $kubectlDir = "C:\Users\TuppaliVaishnavi\AppData\Local\Microsoft\WinGet\Packages\Kubernetes.kubectl_Microsoft.Winget.Source_8wekyb3d8bbwe"
+
+          if (-not (Test-Path "$kubectlDir\kubectl.exe")) {
+              Write-Error "kubectl.exe was not found at $kubectlDir"
+              exit 1
+          }
+
+          Write-Host "kubectl found at:"
+          Write-Host "$kubectlDir\kubectl.exe"
+
+          $kubectlDir | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
+
+          $env:Path = "$kubectlDir;$env:Path"
+
+          Write-Host ""
+          Write-Host "kubectl version:"
+          kubectl version --client
+
+
+      # ==========================================
+      # CHECK KUBERNETES CONNECTION
+      # ==========================================
       - name: Check Kubernetes connection
         shell: powershell
         run: |
@@ -125,6 +153,10 @@ jobs:
           Write-Host "Kubernetes nodes:"
           kubectl get nodes
 
+
+      # ==========================================
+      # PREPARE GHCR MANIFESTS
+      # ==========================================
       - name: Prepare GHCR Kubernetes manifests
         shell: powershell
         env:
@@ -149,6 +181,10 @@ jobs:
             Set-Content $file $content
           }
 
+
+      # ==========================================
+      # APPLY KUBERNETES DEPLOYMENTS
+      # ==========================================
       - name: Apply Kubernetes deployments
         shell: powershell
         run: |
@@ -157,6 +193,10 @@ jobs:
           kubectl apply -f k8s/ghcr/productservice-deployment.yaml
           kubectl apply -f k8s/ghcr/userservice-deployment.yaml
 
+
+      # ==========================================
+      # WAIT FOR ROLLOUTS
+      # ==========================================
       - name: Wait for Order Service rollout
         shell: powershell
         run: |
@@ -177,6 +217,10 @@ jobs:
         run: |
           kubectl rollout status deployment/user-service --timeout=180s
 
+
+      # ==========================================
+      # VERIFY DEPLOYMENT
+      # ==========================================
       - name: Verify deployed workloads
         shell: powershell
         run: |
