@@ -1,0 +1,21 @@
+name: Test Local Kubernetes Runner
+
+on:
+  workflow_dispatch:
+
+jobs:
+  test-kubernetes:
+    runs-on: [self-hosted, Windows, X64]
+
+    steps:
+      - name: Check kubectl
+        shell: powershell
+        run: kubectl version --client
+
+      - name: Check Kubernetes cluster
+        shell: powershell
+        run: kubectl get nodes
+
+      - name: Check running workloads
+        shell: powershell
+        run: kubectl get pods
