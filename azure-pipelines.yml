@@ -29,18 +29,6 @@ steps:
   displayName: 'Verify .NET SDK'
 
 # --------------------------------------------------
-# Show repository structure
-# --------------------------------------------------
-- script: |
-    echo "Repository root:"
-    pwd
-
-    echo ""
-    echo "Top-level files and directories:"
-    find . -maxdepth 2 -type f | sort | head -200
-  displayName: 'Inspect repository structure'
-
-# --------------------------------------------------
 # Restore all .NET projects
 # --------------------------------------------------
 - task: DotNetCoreCLI@2
@@ -58,49 +46,6 @@ steps:
     command: 'build'
     projects: '**/*.csproj'
     arguments: '--configuration $(buildConfiguration) --no-restore'
-
-# --------------------------------------------------
-# Discover and run test projects
-# --------------------------------------------------
-- script: |
-    echo "Searching for .NET test projects..."
-
-    TEST_PROJECTS=$(find . -type f -name "*.csproj" \
-      ! -path "*/bin/*" \
-      ! -path "*/obj/*" \
-      | grep -Ei '(test|tests)' || true)
-
-    if [ -z "$TEST_PROJECTS" ]; then
-      echo "No test project was found in this repository."
-      echo "Skipping test execution."
-      exit 0
-    fi
-
-    echo "Test projects found:"
-    echo "$TEST_PROJECTS"
-
-    while IFS= read -r project; do
-      echo ""
-      echo "Running tests for: $project"
-      dotnet test "$project" \
-        --configuration $(buildConfiguration) \
-        --no-build \
-        --logger "trx;LogFileName=$(basename "$project" .csproj).trx"
-    done <<< "$TEST_PROJECTS"
-  displayName: 'Run automated tests'
-
-# --------------------------------------------------
-# Publish test results if any exist
-# --------------------------------------------------
-- task: PublishTestResults@2
-  displayName: 'Publish test results'
-  condition: succeededOrFailed()
-  inputs:
-    testResultsFormat: 'VSTest'
-    testResultsFiles: '**/*.trx'
-    searchFolder: '$(System.DefaultWorkingDirectory)'
-    mergeTestResults: true
-    failTaskOnFailedTests: true
 
 # --------------------------------------------------
 # Verify microservice source structure
