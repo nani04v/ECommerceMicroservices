@@ -1,0 +1,80 @@
+trigger:
+- main
+
+pool:
+  vmImage: 'ubuntu-latest'
+
+variables:
+  buildConfiguration: 'Release'
+
+steps:
+
+# --------------------------------------------------
+# Install .NET 10 SDK
+# --------------------------------------------------
+- task: UseDotNet@2
+  displayName: 'Install .NET 10 SDK'
+  inputs:
+    packageType: 'sdk'
+    version: '10.x'
+    includePreviewVersions: true
+
+# --------------------------------------------------
+# Verify environment
+# --------------------------------------------------
+- script: |
+    dotnet --version
+    dotnet --info
+  displayName: 'Verify .NET SDK'
+
+# --------------------------------------------------
+# Restore all .NET projects
+# --------------------------------------------------
+- task: DotNetCoreCLI@2
+  displayName: 'Restore .NET projects'
+  inputs:
+    command: 'restore'
+    projects: '**/*.csproj'
+
+# --------------------------------------------------
+# Build all .NET projects
+# --------------------------------------------------
+- task: DotNetCoreCLI@2
+  displayName: 'Build .NET projects'
+  inputs:
+    command: 'build'
+    projects: '**/*.csproj'
+    arguments: '--configuration $(buildConfiguration) --no-restore'
+
+# --------------------------------------------------
+# Run tests
+# --------------------------------------------------
+- task: DotNetCoreCLI@2
+  displayName: 'Run automated tests'
+  inputs:
+    command: 'test'
+    projects: '**/*Tests.csproj'
+    arguments: '--configuration $(buildConfiguration) --no-build --logger trx'
+    publishTestResults: true
+
+# --------------------------------------------------
+# Verify microservice source structure
+# --------------------------------------------------
+- script: |
+    echo "Checking microservice directories..."
+
+    test -d OrderService
+    test -d PaymentService
+    test -d ProductService
+    test -d UserService
+
+    echo "All four microservices found."
+  displayName: 'Verify microservices'
+
+# --------------------------------------------------
+# Verify Kubernetes manifests
+# --------------------------------------------------
+- script: |
+    echo "Checking Kubernetes manifests..."
+    find k8s -type f -name "*.yaml" -print
+  displayName: 'Verify Kubernetes manifests'
