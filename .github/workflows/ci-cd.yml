@@ -1,3 +1,123 @@
+name: ECommerce Microservices CI/CD
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+
+  # ==========================================
+  # 1. BUILD .NET MICROSERVICES
+  # ==========================================
+  build:
+    name: Build .NET Microservices
+    runs-on: ubuntu-latest
+
+    strategy:
+      matrix:
+        service:
+          - OrderService
+          - PaymentService
+          - ProductService
+          - UserService
+
+    steps:
+      - name: Checkout source code
+        uses: actions/checkout@v4
+
+      - name: Setup .NET 10
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: Restore
+        run: dotnet restore ${{ matrix.service }}/${{ matrix.service }}.csproj
+
+      - name: Build
+        run: dotnet build ${{ matrix.service }}/${{ matrix.service }}.csproj --configuration Release --no-restore
+
+
+  # ==========================================
+  # 2. BUILD AND PUSH CONTAINER IMAGES
+  # ==========================================
+  container-images:
+    name: Build and Push Container Images
+    runs-on: ubuntu-latest
+    needs: build
+
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+
+    strategy:
+      matrix:
+        include:
+          - service: OrderService
+            image: ecommerce-order-service
+
+          - service: PaymentService
+            image: ecommerce-payment-service
+
+          - service: ProductService
+            image: ecommerce-product-service
+
+          - service: UserService
+            image: ecommerce-user-service
+
+    steps:
+      - name: Checkout source code
+        uses: actions/checkout@v4
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Extract Docker metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ghcr.io/${{ github.repository_owner }}/${{ matrix.image }}
+          tags: |
+            type=sha,format=long
+            type=raw,value=latest
+
+      - name: Build and push container image
+        uses: docker/build-push-action@v6
+        with:
+          context: ./${{ matrix.service }}
+          file: ./${{ matrix.service }}/Containerfile
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+
+
+  # ==========================================
+  # 3. DEPLOY TO LOCAL KUBERNETES
+  # ==========================================
+  deploy:
+    name: Deploy to Local Kubernetes
+    runs-on: [self-hosted, Windows, X64]
+
+    needs: container-images
+
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+
+    steps:
+      - name: Checkout source code
+        uses: actions/checkout@v4
+
+      # ==========================================
+      # CONFIGURE KUBECTL
+      # ==========================================
       - name: Configure kubectl
         shell: powershell
         run: |
@@ -17,3 +137,99 @@
           Write-Host ""
           Write-Host "kubectl version:"
           kubectl version --client
+
+
+      # ==========================================
+      # CHECK KUBERNETES CONNECTION
+      # ==========================================
+      - name: Check Kubernetes connection
+        shell: powershell
+        run: |
+          Write-Host "Current Kubernetes context:"
+          kubectl config current-context
+
+          Write-Host ""
+          Write-Host "Kubernetes nodes:"
+          kubectl get nodes
+
+
+      # ==========================================
+      # PREPARE GHCR MANIFESTS
+      # ==========================================
+      - name: Prepare GHCR Kubernetes manifests
+        shell: powershell
+        env:
+          IMAGE_TAG: sha-${{ github.sha }}
+        run: |
+          Write-Host "Using image tag: $env:IMAGE_TAG"
+
+          $files = @(
+            "k8s/ghcr/orderservice-deployment.yaml",
+            "k8s/ghcr/paymentservice-deployment.yaml",
+            "k8s/ghcr/productservice-deployment.yaml",
+            "k8s/ghcr/userservice-deployment.yaml"
+          )
+
+          foreach ($file in $files) {
+            Write-Host "Updating $file"
+
+            $content = Get-Content $file -Raw
+
+            $content = $content -replace ':latest', ":$env:IMAGE_TAG"
+
+            Set-Content $file $content
+          }
+
+
+      # ==========================================
+      # APPLY KUBERNETES DEPLOYMENTS
+      # ==========================================
+      - name: Apply Kubernetes deployments
+        shell: powershell
+        run: |
+          kubectl apply -f k8s/ghcr/orderservice-deployment.yaml
+          kubectl apply -f k8s/ghcr/paymentservice-deployment.yaml
+          kubectl apply -f k8s/ghcr/productservice-deployment.yaml
+          kubectl apply -f k8s/ghcr/userservice-deployment.yaml
+
+
+      # ==========================================
+      # WAIT FOR ROLLOUTS
+      # ==========================================
+      - name: Wait for Order Service rollout
+        shell: powershell
+        run: |
+          kubectl rollout status deployment/order-service --timeout=180s
+
+      - name: Wait for Payment Service rollout
+        shell: powershell
+        run: |
+          kubectl rollout status deployment/payment-service --timeout=180s
+
+      - name: Wait for Product Service rollout
+        shell: powershell
+        run: |
+          kubectl rollout status deployment/product-service --timeout=180s
+
+      - name: Wait for User Service rollout
+        shell: powershell
+        run: |
+          kubectl rollout status deployment/user-service --timeout=180s
+
+
+      # ==========================================
+      # VERIFY DEPLOYMENT
+      # ==========================================
+      - name: Verify deployed workloads
+        shell: powershell
+        run: |
+          Write-Host "Deployments:"
+          kubectl get deployments
+
+          Write-Host ""
+          Write-Host "Pods:"
+          kubectl get pods -o wide
+
+          Write-Host ""
+          Write-Host "Services:"
+          kubectl get services
