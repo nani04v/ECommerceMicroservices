@@ -57,12 +57,21 @@ public class AuthController : ControllerBase
 
     // LOGIN
     [HttpPost("login")]
-    public async Task<IActionResult> Login(LoginRequest request)
+    public async Task<IActionResult> Login(
+    LoginRequest request,
+    [FromServices] ILogger<AuthController> logger)
     {
         var user = await _service.GetByEmailAsync(request.Email);
 
+        logger.LogInformation(
+            "Login diagnostic: User found = {UserFound}",
+            user != null);
+
         if (user == null || !user.IsActive)
         {
+            logger.LogWarning(
+                "Login rejected: User missing or inactive.");
+
             return Unauthorized(new
             {
                 message = "Invalid email or password."
@@ -73,8 +82,14 @@ public class AuthController : ControllerBase
             request.Password,
             user.PasswordHash);
 
+        logger.LogInformation(
+            "Login diagnostic: Password valid = {PasswordValid}",
+            validPassword);
+
         if (!validPassword)
         {
+            logger.LogWarning("Login rejected: Password verification failed.");
+
             return Unauthorized(new
             {
                 message = "Invalid email or password."
